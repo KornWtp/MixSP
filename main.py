@@ -1,5 +1,8 @@
-from torch.utils.data import DataLoader
 import math
+import random
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
 from sentence_transformers import LoggingHandler, util
 from sentence_transformers.moe_encoder import MixtureOfExpertsEncoder
 from sentence_transformers.moe_encoder.evaluation import MoECorrelationEvaluator
@@ -10,6 +13,46 @@ import os
 import gzip
 import csv
 from zipfile import ZipFile
+import argparse
+
+parser = argparse.ArgumentParser()
+
+## Required parameters
+parser.add_argument('--model_save_path',
+					type=str,
+					default='experiments/moe_cross_encoder_model',
+					help='The output directory where the model checkpoints will be written.')
+parser.add_argument('--model_name_or_path',
+					type=str,
+					default='bert-base-uncased',
+					help='The model checkpoint for weights initialization.')
+parser.add_argument('--batch_size', 
+					type=int, 
+					default=128,
+					help='Batch size for training.')
+parser.add_argument('--num_epochs',
+					type=int,
+					default=10,
+					help='Total number of training epochs.')  
+parser.add_argument('--num_experts',
+					type=int,
+					default=2,
+					help='Total number of sparse expert models.')                      
+parser.add_argument("--learning_rate",
+					type=float,
+					default=1e-4,
+					help="The initial learning rate for AdamW.")     
+parser.add_argument("--seed",
+					type=int,
+					default=1000,
+					help="The random seed value")	                                   
+
+args = parser.parse_args()
+print(args)
+
+torch.manual_seed(args.seed)
+random.seed(args.seed)
+np.random.seed(args.seed)
 
 #### Just some code to print debug information to stdout
 logging.basicConfig(format='%(asctime)s - %(message)s',
@@ -47,16 +90,10 @@ with gzip.open(sts_dataset_path, 'rt', encoding='utf8') as fIn:
         else:
             train_samples.append(inp_example)
 
-#Configuration
-train_batch_size = 128
-num_epochs = 10
-model_save_path = 'experiments/moe_model_num_experts_5'
-
-
-model = MixtureOfExpertsEncoder('bert-base-uncased', num_experts=5)
+model = MixtureOfExpertsEncoder(args.model_name_or_path, num_experts=args.num_experts, max_length=64)
 
 # We wrap train_samples (which is a List[InputExample]) into a pytorch DataLoader
-train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=train_batch_size)
+train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=args.batch_size)
 
 
 # We add an evaluator, which evaluates the performance during training
@@ -64,19 +101,26 @@ evaluator = MoECorrelationEvaluator.from_input_examples(dev_samples, name='sts-d
 
 
 # Configure the training
-warmup_steps = math.ceil(len(train_dataloader) * num_epochs * 0.1) #10% of train data for warm-up
+warmup_steps = math.ceil(len(train_dataloader) * args.num_epochs * 0.1) #10% of train data for warm-up
 logger.info("Warmup-steps: {}".format(warmup_steps))
 
 
 # Train the model
+logger.info("Start training")
+start = datetime.now()
+
 model.fit(train_dataloader=train_dataloader,
           evaluator=evaluator,
-          epochs=num_epochs,
+          epochs=args.num_epochs,
           evaluation_steps=500,
           warmup_steps=warmup_steps,
-          output_path=model_save_path,
-          optimizer_params={"lr": 1e-4},
+          output_path=args.model_save_path,
+          optimizer_params={"lr": args.learning_rate},
           use_amp=True)
+
+stop = datetime.now()
+run_time = stop - start
+logger.info("Training time: " + str(run_time) + " s")
 
 ##############################################################################
 #
@@ -84,6 +128,6 @@ model.fit(train_dataloader=train_dataloader,
 #
 ##############################################################################
 
-model = MixtureOfExpertsEncoder.from_pretrained(model_save_path)
+model = MixtureOfExpertsEncoder.from_pretrained(args.model_save_path)
 test_evaluator = MoECorrelationEvaluator.from_input_examples(test_samples, name='sts-test')
-test_evaluator(model, output_path=model_save_path)
+test_evaluator(model, output_path=args.model_save_path)

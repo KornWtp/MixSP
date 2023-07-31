@@ -41,6 +41,7 @@ class MixtureOfExpertsEncoder():
         if max_length is not None:
             self.config.max_length = max_length
         
+
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
             logger.info("Use pytorch device: {}".format(device))
@@ -81,12 +82,11 @@ class MixtureOfExpertsEncoder():
 
         return tokenized
 
-
     def fit(self,
             train_dataloader: DataLoader,
             evaluator: SentenceEvaluator = None,
             epochs: int = 1,
-            loss_fct = nn.BCEWithLogitsLoss(), 
+            loss_fct = nn.MSELoss(), 
             cos_score_transformation=nn.Identity(),
             scheduler: str = 'WarmupLinear',
             warmup_steps: int = 10000,
@@ -110,7 +110,7 @@ class MixtureOfExpertsEncoder():
         :param train_dataloader: DataLoader with training InputExamples
         :param evaluator: An evaluator (sentence_transformers.evaluation) evaluates the model performance during training on held-out dev data. It is used to determine the best model that is saved to disc.
         :param epochs: Number of epochs for training
-        :param loss_fct: Which loss function to use for training. If None, will use nn.BCEWithLogitsLoss()
+        :param loss_fct: Which loss function to use for training. If None, will use nn.MSELoss()
         :param cos_score_transformation: This function applied on top of logits output of model.
         :param scheduler: Learning rate scheduler. Available schedulers: constantlr, warmupconstant, warmuplinear, warmupcosine, warmupcosinewithhardrestarts
         :param warmup_steps: Behavior depends on the scheduler. For WarmupLinear (default), the learning rate is increased from o up to the maximal learning rate. After these many training steps, the learning rate is decreased linearly back to zero.
@@ -155,7 +155,7 @@ class MixtureOfExpertsEncoder():
         if isinstance(scheduler, str):
             scheduler = SentenceTransformer._get_scheduler(optimizer, scheduler=scheduler, warmup_steps=warmup_steps, t_total=num_train_steps)
 
-       
+
         skip_scheduler = False
         for epoch in trange(epochs, desc="Epoch", disable=not show_progress_bar):
             training_steps = 0
@@ -165,9 +165,10 @@ class MixtureOfExpertsEncoder():
             for features, labels in tqdm(train_dataloader, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
                 if use_amp:
                     with autocast():
-                        preds = self.model(features)
-                        logits = cos_score_transformation(preds)
-                        loss_value = loss_fct(logits.view(-1), labels)
+                        # embeddings, moe_loss = self.model(features, labels)
+                        embeddings = self.model(features)
+                        output = cos_score_transformation(torch.cosine_similarity(embeddings[0], embeddings[1]))
+                        loss_value = loss_fct(output, labels.view(-1))
 
                     scale_before_step = scaler.get_scale()
                     scaler.scale(loss_value).backward()
@@ -178,9 +179,9 @@ class MixtureOfExpertsEncoder():
 
                     skip_scheduler = scaler.get_scale() != scale_before_step
                 else:
-                    preds = self.model(features)
-                    logits = cos_score_transformation(preds)
-                    loss_value = loss_fct(logits.view(-1), labels)
+                    embeddings = self.model(features)
+                    output = cos_score_transformation(torch.cosine_similarity(embeddings[0], embeddings[1]))
+                    loss_value = loss_fct(output, labels.view(-1))
                     loss_value.backward()
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
                     optimizer.step()
@@ -202,11 +203,12 @@ class MixtureOfExpertsEncoder():
                 self._eval_during_training(evaluator, output_path, save_best_model, epoch, -1, callback)
 
 
+
     def predict(self, sentences: List[List[str]],
                batch_size: int = 32,
                show_progress_bar: bool = None,
                num_workers: int = 0,
-               cos_score_transformation = nn.Sigmoid(),
+               cos_score_transformation = nn.Identity(),
                convert_to_numpy: bool = True,
                convert_to_tensor: bool = False
                ):
@@ -236,17 +238,23 @@ class MixtureOfExpertsEncoder():
         if show_progress_bar:
             iterator = tqdm(inp_dataloader, desc="Batches")
 
+        # all_gate_probs = []
+        # all_expert_outputs = []
+
         pred_scores = []
         self.model.eval()
         self.model.to(self._target_device)
         with torch.no_grad():
             for features in iterator:
-                preds = self.model(features)
+                embeddings = self.model(features)
+                # embeddings, gate_probs, expert_outputs = self.model(features)
+                
+                outputs = cos_score_transformation(torch.cosine_similarity(embeddings[0], embeddings[1]))
+                pred_scores.extend(outputs)
+                
+                # all_gate_probs.extend(gate_probs)
+                # all_expert_outputs.extend(expert_outputs)
 
-                logits = cos_score_transformation(preds)
-                pred_scores.extend(logits)
-
-        pred_scores = [score[0] for score in pred_scores]
         if convert_to_tensor:
             pred_scores = torch.stack(pred_scores)
         elif convert_to_numpy:
@@ -256,6 +264,8 @@ class MixtureOfExpertsEncoder():
             pred_scores = pred_scores[0]
 
         return pred_scores
+
+        # return pred_scores, all_gate_probs, all_expert_outputs
 
 
     def _eval_during_training(self, evaluator, output_path, save_best_model, epoch, steps, callback):
@@ -269,7 +279,6 @@ class MixtureOfExpertsEncoder():
                 if save_best_model:
                     self.save(output_path)
 
-
     def save(self, path):
         """
         Saves all model and tokenizer to path
@@ -281,13 +290,11 @@ class MixtureOfExpertsEncoder():
         self.model.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
 
-
     def save_pretrained(self, path):
         """
         Same function as save
         """
         return self.save(path)
-
 
     @classmethod
     def from_pretrained(self, model_name):
@@ -295,7 +302,6 @@ class MixtureOfExpertsEncoder():
         model = Model(model_name, config.num_experts, config)
         model.bert = AutoModel.from_pretrained(model_name, config=config)
         model.moe.load_state_dict(torch.load(f"{model_name}/moe_model.bin"))
-        model.fc.load_state_dict(torch.load(f"{model_name}/fc_model.bin"))
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         
         mixture_of_experts_encoder = self(model_name=model_name, num_experts=config.num_experts, max_length=config.max_length)

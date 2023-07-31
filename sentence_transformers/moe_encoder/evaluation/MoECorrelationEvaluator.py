@@ -44,8 +44,7 @@ class MoECorrelationEvaluator:
 
         logger.info("MoECorrelationEvaluator: Evaluating the model on " + self.name + " dataset" + out_txt)
         pred_scores = model.predict(self.sentence_pairs, convert_to_numpy=True, show_progress_bar=False)
-
-
+        
         eval_pearson, _ = pearsonr(self.scores, pred_scores)
         eval_spearman, _ = spearmanr(self.scores, pred_scores)
 
