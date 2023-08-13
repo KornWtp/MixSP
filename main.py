@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser()
 ## Required parameters
 parser.add_argument('--model_save_path',
 					type=str,
-					default='experiments/cross_encoder_model_with_moe_aux_loss',
+					default='experiments/cross_encoder_model_with_moe_balance',
 					help='The output directory where the model checkpoints will be written.')
 parser.add_argument('--model_name_or_path',
 					type=str,
@@ -33,7 +33,11 @@ parser.add_argument('--batch_size',
 parser.add_argument('--num_epochs',
 					type=int,
 					default=10,
-					help='Total number of training epochs.')  
+					help='Total number of training epochs.')
+parser.add_argument("--max_seq_length",
+					type=int,
+					default=64,
+					help="Model max lengths for inputs (number of word pieces).")                      
 parser.add_argument('--num_experts',
 					type=int,
 					default=2,
@@ -42,6 +46,10 @@ parser.add_argument('--top_routing',
 					type=int,
 					default=1,
 					help='Total number of top routing.')                      
+parser.add_argument("--temp",
+					type=float,
+					default=0.3,
+					help="Temperature for the router MoE.")                    
 parser.add_argument("--learning_rate",
 					type=float,
 					default=1e-4,
@@ -97,7 +105,8 @@ with gzip.open(sts_dataset_path, 'rt', encoding='utf8') as fIn:
 model = MixtureOfExpertsEncoder(args.model_name_or_path, 
                                 num_experts=args.num_experts, 
                                 top_routing=args.top_routing, 
-                                max_length=64)
+                                temp=args.temp,
+                                max_length=args.max_seq_length)
 
 # We wrap train_samples (which is a List[InputExample]) into a pytorch DataLoader
 train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=args.batch_size)

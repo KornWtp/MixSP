@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class MixtureOfExpertsEncoder():
-    def __init__(self, model_name: str, num_experts: int = None, top_routing: int = None, 
+    def __init__(self, model_name: str, num_experts: int = 2, top_routing: int = 1, temp: float = 0.5, 
                  max_length: int = None, device: str = None, tokenizer_args: dict = {}):
         """
         ...?
@@ -36,12 +36,15 @@ class MixtureOfExpertsEncoder():
             self.config.num_experts = num_experts
         if top_routing is not None:
             self.config.top_routing = top_routing
-
-        self.model = Model(model_name, num_experts, top_routing, self.config)
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_args)
-        self.max_length = max_length
+        if temp is not None:
+            self.config.temp = temp    
         if max_length is not None:
+            self.max_length = max_length
             self.config.max_length = max_length
+
+        self.model = Model(model_name, num_experts, top_routing, temp, self.config)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_args)
+        
         
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -294,13 +297,13 @@ class MixtureOfExpertsEncoder():
     @classmethod
     def from_pretrained(self, model_name):
         config = AutoConfig.from_pretrained(model_name)
-        model = Model(model_name, config.num_experts, config.top_routing, config)
+        model = Model(model_name, config.num_experts, config.top_routing, config.temp, config)
         model.bert = AutoModel.from_pretrained(model_name, config=config)
         model.moe.load_state_dict(torch.load(f"{model_name}/moe_model.bin"))
         model.fc.load_state_dict(torch.load(f"{model_name}/fc_model.bin"))
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         
-        mixture_of_experts_encoder = self(model_name=model_name, num_experts=config.num_experts, max_length=config.max_length)
+        mixture_of_experts_encoder = self(model_name=model_name, num_experts=config.num_experts, temp=config.temp, max_length=config.max_length)
         mixture_of_experts_encoder.model = model
         mixture_of_experts_encoder.tokenizer = tokenizer
         return mixture_of_experts_encoder
