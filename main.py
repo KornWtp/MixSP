@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser()
 ## Required parameters
 parser.add_argument('--model_save_path',
 					type=str,
-					default='experiments/moe_cross_encoder_model',
+					default='experiments/cross_encoder_model_with_moe_aux_loss',
 					help='The output directory where the model checkpoints will be written.')
 parser.add_argument('--model_name_or_path',
 					type=str,
@@ -37,7 +37,11 @@ parser.add_argument('--num_epochs',
 parser.add_argument('--num_experts',
 					type=int,
 					default=2,
-					help='Total number of sparse expert models.')                      
+					help='Total number of sparse expert models.') 
+parser.add_argument('--top_routing',
+					type=int,
+					default=1,
+					help='Total number of top routing.')                      
 parser.add_argument("--learning_rate",
 					type=float,
 					default=1e-4,
@@ -90,7 +94,10 @@ with gzip.open(sts_dataset_path, 'rt', encoding='utf8') as fIn:
         else:
             train_samples.append(inp_example)
 
-model = MixtureOfExpertsEncoder(args.model_name_or_path, num_experts=args.num_experts, max_length=64)
+model = MixtureOfExpertsEncoder(args.model_name_or_path, 
+                                num_experts=args.num_experts, 
+                                top_routing=args.top_routing, 
+                                max_length=64)
 
 # We wrap train_samples (which is a List[InputExample]) into a pytorch DataLoader
 train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=args.batch_size)

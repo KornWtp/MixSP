@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 class MixtureOfExpertsEncoder():
-    def __init__(self, model_name: str, num_experts: int = None, max_length: int = None,
-                 device: str = None, tokenizer_args: dict = {}):
+    def __init__(self, model_name: str, num_experts: int = None, top_routing: int = None, 
+                 max_length: int = None, device: str = None, tokenizer_args: dict = {}):
         """
         ...?
 
@@ -34,8 +34,10 @@ class MixtureOfExpertsEncoder():
 
         if num_experts is not None:
             self.config.num_experts = num_experts
+        if top_routing is not None:
+            self.config.top_routing = top_routing
 
-        self.model = Model(model_name, num_experts, self.config)
+        self.model = Model(model_name, num_experts, top_routing, self.config)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_args)
         self.max_length = max_length
         if max_length is not None:
@@ -165,10 +167,11 @@ class MixtureOfExpertsEncoder():
             for features, labels in tqdm(train_dataloader, desc="Iteration", smoothing=0.05, disable=not show_progress_bar):
                 if use_amp:
                     with autocast():
-                        preds = self.model(features)
+                        preds, gate_loss = self.model(features, labels)
                         logits = cos_score_transformation(preds)
                         loss_value = loss_fct(logits.view(-1), labels)
-
+                        loss_value += gate_loss
+                    
                     scale_before_step = scaler.get_scale()
                     scaler.scale(loss_value).backward()
                     scaler.unscale_(optimizer)
@@ -178,7 +181,7 @@ class MixtureOfExpertsEncoder():
 
                     skip_scheduler = scaler.get_scale() != scale_before_step
                 else:
-                    preds = self.model(features)
+                    preds, gate_loss = self.model(features, labels)
                     logits = cos_score_transformation(preds)
                     loss_value = loss_fct(logits.view(-1), labels)
                     loss_value.backward()
@@ -242,9 +245,8 @@ class MixtureOfExpertsEncoder():
         with torch.no_grad():
             for features in iterator:
                 preds = self.model(features)
-
-                logits = cos_score_transformation(preds)
-                pred_scores.extend(logits)
+                preds = cos_score_transformation(preds)
+                pred_scores.extend(preds)
 
         pred_scores = [score[0] for score in pred_scores]
         if convert_to_tensor:
@@ -292,7 +294,7 @@ class MixtureOfExpertsEncoder():
     @classmethod
     def from_pretrained(self, model_name):
         config = AutoConfig.from_pretrained(model_name)
-        model = Model(model_name, config.num_experts, config)
+        model = Model(model_name, config.num_experts, config.top_routing, config)
         model.bert = AutoModel.from_pretrained(model_name, config=config)
         model.moe.load_state_dict(torch.load(f"{model_name}/moe_model.bin"))
         model.fc.load_state_dict(torch.load(f"{model_name}/fc_model.bin"))
