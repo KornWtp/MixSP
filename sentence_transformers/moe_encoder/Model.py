@@ -1,4 +1,3 @@
-
 import os
 import torch
 import torch.nn as nn
@@ -20,13 +19,14 @@ class MLP(nn.Module):
 
         
 class MoE(nn.Module):
-    def __init__(self, input_dim, output_dim, num_experts, top_routing, temp):
+    def __init__(self, input_dim, output_dim, num_experts, top_routing):
         super(MoE, self).__init__()
         self.num_experts = num_experts
         self.gate = nn.Linear(input_dim, num_experts)
         self.experts = nn.ModuleList([MLP(input_dim, input_dim*10, output_dim) for _ in range(num_experts)])
-        self.loss_fct = nn.CrossEntropyLoss()
-        self.temp = temp
+        self.cls = nn.Linear(num_experts, 1)
+        self.loss_fct = nn.BCEWithLogitsLoss()
+
         if top_routing == 0:
             self.top_routing = None
         else:
@@ -35,7 +35,7 @@ class MoE(nn.Module):
     def forward(self, x1, x2, labels = None):
         # Mixture of Experts (MoE)
         gate_outputs = self.gate(x1)
-        gate_probs = torch.softmax(gate_outputs / self.temp, dim=1)
+        gate_probs = torch.softmax(gate_outputs, dim=1)
         
         # Top routing
         if self.top_routing is not None:
@@ -55,19 +55,20 @@ class MoE(nn.Module):
         
         if labels is not None:
             labels = [1 if label >= 0.8 else 0 for label in labels]
-            labels = torch.tensor(labels, dtype=torch.long).to(gate_outputs.device)
-            gate_loss = self.loss_fct(torch.softmax(gate_outputs / self.temp, dim=1), labels.view(-1))
+            labels = torch.tensor(labels, dtype=torch.float32).to(gate_outputs.device)
+            gate_loss = self.loss_fct(self.cls(gate_outputs).view(-1), labels)
             return weighted_outputs, gate_loss
         else:
             return weighted_outputs
+            # return weighted_outputs, gate_probs
 
 
 class Model(nn.Module):
-    def __init__(self, model_name:str, num_experts:int, top_routing:int, temp:float, config:Dict = {}):
+    def __init__(self, model_name:str, num_experts:int, top_routing:int, config:Dict = {}):
         super(Model, self).__init__()
         expert_dim = config.hidden_size
         self.bert = AutoModel.from_pretrained(model_name, config=config)
-        self.moe = MoE(expert_dim, expert_dim, num_experts, top_routing, temp)
+        self.moe = MoE(expert_dim, expert_dim, num_experts, top_routing)
         self.fc = nn.Linear(expert_dim*2, 1)
 
     def forward(self, features, labels = None):

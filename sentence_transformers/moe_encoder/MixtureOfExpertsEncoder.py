@@ -1,4 +1,3 @@
-
 from transformers import AutoTokenizer, AutoConfig, AutoModel
 import numpy as np
 import logging
@@ -19,8 +18,8 @@ logger = logging.getLogger(__name__)
 
 
 class MixtureOfExpertsEncoder():
-    def __init__(self, model_name: str, num_experts: int = 2, top_routing: int = 1, temp: float = 0.5, 
-                 max_length: int = None, device: str = None, tokenizer_args: dict = {}):
+    def __init__(self, model_name: str, num_experts: int = 2, top_routing: int = 1, max_length: int = None,
+                 alpha_1: float = 0.05, alpha_2: float = 0.005, device: str = None, tokenizer_args: dict = {}):
         """
         ...?
 
@@ -35,14 +34,17 @@ class MixtureOfExpertsEncoder():
         if num_experts is not None:
             self.config.num_experts = num_experts
         if top_routing is not None:
-            self.config.top_routing = top_routing
-        if temp is not None:
-            self.config.temp = temp    
+            self.config.top_routing = top_routing  
         if max_length is not None:
             self.max_length = max_length
             self.config.max_length = max_length
+        if alpha_1 is not None and alpha_2:
+            self.alpha_1 = alpha_1
+            self.alpha_2 = alpha_2
+            self.config.alpha_1 = alpha_1
+            self.config.alpha_2 = alpha_2
 
-        self.model = Model(model_name, num_experts, top_routing, temp, self.config)
+        self.model = Model(model_name, num_experts, top_routing, self.config)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, **tokenizer_args)
         
         
@@ -172,8 +174,10 @@ class MixtureOfExpertsEncoder():
                     with autocast():
                         preds, gate_loss = self.model(features, labels)
                         logits = cos_score_transformation(preds)
-                        loss_value = loss_fct(logits.view(-1), labels)
-                        loss_value += gate_loss
+                        sim_loss = loss_fct(logits.view(-1), labels)
+                        sim_loss *= self.alpha_1
+                        gate_loss *= self.alpha_2
+                        loss_value = sim_loss + gate_loss
                     
                     scale_before_step = scaler.get_scale()
                     scaler.scale(loss_value).backward()
@@ -186,7 +190,10 @@ class MixtureOfExpertsEncoder():
                 else:
                     preds, gate_loss = self.model(features, labels)
                     logits = cos_score_transformation(preds)
-                    loss_value = loss_fct(logits.view(-1), labels)
+                    sim_loss = loss_fct(logits.view(-1), labels)
+                    sim_loss *= self.alpha_1
+                    gate_loss *= self.alpha_2
+                    loss_value = sim_loss + gate_loss
                     loss_value.backward()
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_grad_norm)
                     optimizer.step()
@@ -297,13 +304,13 @@ class MixtureOfExpertsEncoder():
     @classmethod
     def from_pretrained(self, model_name):
         config = AutoConfig.from_pretrained(model_name)
-        model = Model(model_name, config.num_experts, config.top_routing, config.temp, config)
+        model = Model(model_name, config.num_experts, config.top_routing, config)
         model.bert = AutoModel.from_pretrained(model_name, config=config)
         model.moe.load_state_dict(torch.load(f"{model_name}/moe_model.bin"))
         model.fc.load_state_dict(torch.load(f"{model_name}/fc_model.bin"))
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         
-        mixture_of_experts_encoder = self(model_name=model_name, num_experts=config.num_experts, temp=config.temp, max_length=config.max_length)
+        mixture_of_experts_encoder = self(model_name=model_name, num_experts=config.num_experts, max_length=config.max_length, alpha_1=config.alpha_1, alpha_2=config.alpha_2)
         mixture_of_experts_encoder.model = model
         mixture_of_experts_encoder.tokenizer = tokenizer
         return mixture_of_experts_encoder

@@ -46,10 +46,12 @@ parser.add_argument('--top_routing',
 					type=int,
 					default=1,
 					help='Total number of top routing.')                      
-parser.add_argument("--temp",
+parser.add_argument("--alpha_1",
 					type=float,
-					default=0.3,
-					help="Temperature for the router MoE.")                    
+					default=0.05)  
+parser.add_argument("--alpha_2",
+					type=float,
+					default=0.005)  					                 
 parser.add_argument("--learning_rate",
 					type=float,
 					default=1e-4,
@@ -105,8 +107,9 @@ with gzip.open(sts_dataset_path, 'rt', encoding='utf8') as fIn:
 model = MixtureOfExpertsEncoder(args.model_name_or_path, 
                                 num_experts=args.num_experts, 
                                 top_routing=args.top_routing, 
-                                temp=args.temp,
-                                max_length=args.max_seq_length)
+                                max_length=args.max_seq_length,
+								alpha_1=args.alpha_1,
+								alpha_2=args.alpha_2)
 
 # We wrap train_samples (which is a List[InputExample]) into a pytorch DataLoader
 train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=args.batch_size)
