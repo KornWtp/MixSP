@@ -5,6 +5,8 @@ This repository contains the code and pre-trained models for our paper MixSP: Sp
 ## What is MixSP?
 We introduce a novel embedding space decomposition method called MixSP utilizing a Mixture of Specialized Projectors. The novelty of MixSP lies in a carefully designed learning pipeline with the following traits: (i) the ability to distinguish upper-range from lower-range samples and (ii) the ability to accurately rank sentence pairs within each class. In particular, our method uses a routing network and two specialized projectors to handle upper-range and lower-range representations, resulting in a better STS performance overall.
 
+[PICTURE]
+
 ## Installation
 
 We recommend **Python 3.6** or higher, **[PyTorch 1.6.0](https://pytorch.org/get-started/locally/)** or higher and **[transformers v4.6.0](https://github.com/huggingface/transformers)** or higher. The code does **not** work with Python 2.7.
