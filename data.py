@@ -1,5 +1,4 @@
-# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# SPDX-License-Identifier: Apache-2.0
+# We modify code from https://github.com/amzn/trans-encoder/blob/main/src/data.py
 
 from datasets import load_dataset
 from sentence_transformers.readers import InputExample
@@ -21,25 +20,47 @@ QUESTION = "question"
 QUESTION1 = "question1"
 QUESTION2 = "question2"
 
-def load_snli():
+def load_main_sts():
     """
-    Load the SNLI dataset (https://nlp.stanford.edu/projects/snli/) from huggingface dataset portal.
+    Load the STS datasets:
+        STS BIOSSES: https://huggingface.co/datasets/mteb/biosses-sts
+        STS CDSC-R: https://huggingface.co/datasets/PL-MTEB/cdscr-sts
     Parameters
     ----------
         None
     Returns
     ----------
-        all_pairs: a list of sentence pairs from the SNLI dataset
+        all_pairs: a list of sentence pairs from the STS datasets
+        all_test: a dict of all test sets of the STS datasets
     """
 
     all_pairs = []
+    all_test = {}
+    for name in ["bio", "cdsc_r_val", "cdsc_r_test"]:
+        all_test[name] = []
 
-    dataset = load_dataset("snli")
-    all_pairs += [(row["premise"], row["hypothesis"]) for row in dataset["train"]]
-    all_pairs += [(row["premise"], row["hypothesis"]) for row in dataset["validation"]]
-    all_pairs += [(row["premise"], row["hypothesis"]) for row in dataset["test"]]
+    dataset = load_dataset("mteb/biosses-sts")
+    for row in dataset['test']:
+        score = row['score'] / 5.0  # Normalize score to range 0 ... 1
+        inp_example = InputExample(texts=[row['sentence1'], row['sentence2']], label=score)
+        all_test["bio"].append(inp_example)
+        all_pairs.append([row['sentence1'], row['sentence2']])
+    
+    dataset = load_dataset("PL-MTEB/cdscr-sts")
+    for row in dataset['validation']:
+        score = row['score'] / 5.0  # Normalize score to range 0 ... 1
+        inp_example = InputExample(texts=[row['sentence1'], row['sentence2']], label=score)
+        all_test["cdsc_r_val"].append(inp_example)
+        all_pairs.append([row['sentence1'], row['sentence2']])
 
-    return all_pairs, None, None
+    dataset = load_dataset("PL-MTEB/cdscr-sts")
+    for row in dataset['test']:
+        score = row['score'] / 5.0  # Normalize score to range 0 ... 1
+        inp_example = InputExample(texts=[row['sentence1'], row['sentence2']], label=score)
+        all_test["cdsc_r_test"].append(inp_example)
+        all_pairs.append([row['sentence1'], row['sentence2']])
+
+    return all_pairs, all_test, None
 
 def load_sts():
     """
@@ -379,13 +400,11 @@ def load_custom(fpath):
 
 
 task_loader_dict = {
-    "sts": load_sts, 
-    "sickr": load_sickr,
-    "sts_sickr": load_sts_and_sickr,
+    "sts": load_main_sts, 
+    "7_standard_sts": load_sts_and_sickr,
     "qqp": load_qqp,
     "qnli": load_qnli,
     "mrpc": load_mrpc,
-    "snli": load_snli,
     "custom": load_custom
 }
 
