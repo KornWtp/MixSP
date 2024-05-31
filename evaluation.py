@@ -46,7 +46,7 @@ def main():
             all_test.append(test)
             dev_samples.append(dev)
     else:
-        raise TypeError("Not Implement!!")
+        raise NotImplementedError
 
     # Load moe sentence transformers' model checkpoint
     model = MixSPEncoder.from_pretrained(args.model_name_or_path)
