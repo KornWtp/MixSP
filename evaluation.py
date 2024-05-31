@@ -51,13 +51,13 @@ def main():
     # Load moe sentence transformers' model checkpoint
     model = MixSPEncoder.from_pretrained(args.model_name_or_path)
 
-    all_sts_name = {"bio": "BIOSSES",
-                    "cdsc_r_val": "CDSC-R (Val)",
-                    "cdsc_r_test": "CDSC-R (Test)"}
-    
-    task_names = []
-    scores = []
     if args.task_set == "sts":
+        all_sts_name = {"bio": "BIOSSES",
+                "cdsc_r_val": "CDSC-R (Val)",
+                "cdsc_r_test": "CDSC-R (Test)"}
+        
+        task_names = []
+        scores = []
         logging.info ("########### Main STS Results ##########")
         for name, data in all_test.items():
             test_evaluator = MixSPCorrelationEvaluator.from_input_examples(data, name=name)
@@ -66,19 +66,17 @@ def main():
         task_names.append("Avg.")
         scores.append("%.2f" % (sum([float(score) for score in scores]) / len(scores)))
         print_table(task_names, scores)
-
-
-    all_sts_name = {"2012": "STS12",
-                    "2013": "STS13",
-                    "2014": "STS14",
-                    "2015": "STS15",
-                    "2016": "STS16",
-                    "stsb": "STSBenchmark",
-                    "sickr": "SICKRelatedness"}
+    elif args.task_set == "7_standard_sts":
+        all_sts_name = {"2012": "STS12",
+                "2013": "STS13",
+                "2014": "STS14",
+                "2015": "STS15",
+                "2016": "STS16",
+                "stsb": "STSBenchmark",
+                "sickr": "SICKRelatedness"}
     
-    task_names = []
-    scores = []
-    if args.task_set == "7_standard_sts":
+        task_names = []
+        scores = []
         logging.info ("########### 7 Standard STS Results ##########")
         for name, data in all_test.items():
             test_evaluator = MixSPCorrelationEvaluator.from_input_examples(data, name=name)
@@ -87,15 +85,13 @@ def main():
         task_names.append("Avg.")
         scores.append("%.2f" % (sum([float(score) for score in scores]) / len(scores)))
         print_table(task_names, scores)
+    elif args.task_set == "binary_classification":
+        transfer_name = {"qqp": "QQP",
+                "qnli": "QNLI",
+                "mrpc": "MRPC"}
 
-
-    transfer_name = {"qqp": "QQP",
-                    "qnli": "QNLI",
-                    "mrpc": "MRPC"}
-
-    task_names = []
-    scores = []
-    if args.task_set == "binary_classification":
+        task_names = []
+        scores = []
         logging.info ("########### Binary Text Classification Results ###########")
         for test in all_test:
             for name, data in test.items():
@@ -105,6 +101,8 @@ def main():
         task_names.append("Avg.")
         scores.append("%.2f" % (sum([float(score) for score in scores]) / len(scores)))
         print_table(task_names, scores)
+    else:
+        raise NotImplementedError
 
 
 if __name__ == "__main__":
