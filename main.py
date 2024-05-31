@@ -4,8 +4,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from sentence_transformers import LoggingHandler, util
-from sentence_transformers.moe_encoder import MixtureOfExpertsEncoder
-from sentence_transformers.moe_encoder.evaluation import MoECorrelationEvaluator
+from sentence_transformers.mixsp_encoder import MixSPEncoder
+from sentence_transformers.mixsp_encoder.evaluation import MixSPCorrelationEvaluator
 from sentence_transformers.readers import InputExample
 import logging
 from datetime import datetime
@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser()
 ## Required parameters
 parser.add_argument('--model_save_path',
 					type=str,
-					default='experiments/cross_encoder_model_with_moe_balance',
+					default='experiments/mixsp-base-model',
 					help='The output directory where the model checkpoints will be written.')
 parser.add_argument('--model_name_or_path',
 					type=str,
@@ -28,7 +28,7 @@ parser.add_argument('--model_name_or_path',
 					help='The model checkpoint for weights initialization.')
 parser.add_argument('--batch_size', 
 					type=int, 
-					default=128,
+					default=16,
 					help='Batch size for training.')
 parser.add_argument('--num_epochs',
 					type=int,
@@ -54,7 +54,7 @@ parser.add_argument("--alpha_2",
 					default=0.005)  					                 
 parser.add_argument("--learning_rate",
 					type=float,
-					default=1e-4,
+					default=5e-5,
 					help="The initial learning rate for AdamW.")     
 parser.add_argument("--seed",
 					type=int,
@@ -104,24 +104,25 @@ with gzip.open(sts_dataset_path, 'rt', encoding='utf8') as fIn:
         else:
             train_samples.append(inp_example)
 
-model = MixtureOfExpertsEncoder(args.model_name_or_path, 
-                                num_experts=args.num_experts, 
-                                top_routing=args.top_routing, 
-                                max_length=args.max_seq_length,
-								alpha_1=args.alpha_1,
-								alpha_2=args.alpha_2)
+model = MixSPEncoder(args.model_name_or_path, 
+						num_experts=args.num_experts, 
+						top_routing=args.top_routing, 
+						max_length=args.max_seq_length,
+						alpha_1=args.alpha_1,
+						alpha_2=args.alpha_2)
 
 # We wrap train_samples (which is a List[InputExample]) into a pytorch DataLoader
 train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=args.batch_size)
 
 
 # We add an evaluator, which evaluates the performance during training
-evaluator = MoECorrelationEvaluator.from_input_examples(dev_samples, name='sts-dev')
+evaluator = MixSPCorrelationEvaluator.from_input_examples(dev_samples, name='sts-dev')
 
 
 # Configure the training
-warmup_steps = math.ceil(len(train_dataloader) * args.num_epochs * 0.1) #10% of train data for warm-up
+warmup_steps = math.ceil(len(train_dataloader) * args.num_epochs * 0.15) # 15% of train data and number of epoch for warm-up
 logger.info("Warmup-steps: {}".format(warmup_steps))
+evaluation_steps = math.ceil(len(train_dataloader) * 0.2) # 20% of train data for evaluation step
 
 
 # Train the model
@@ -131,7 +132,7 @@ start = datetime.now()
 model.fit(train_dataloader=train_dataloader,
           evaluator=evaluator,
           epochs=args.num_epochs,
-          evaluation_steps=500,
+          evaluation_steps=evaluation_steps,
           warmup_steps=warmup_steps,
           output_path=args.model_save_path,
           optimizer_params={"lr": args.learning_rate},
@@ -147,6 +148,6 @@ logger.info("Training time: " + str(run_time) + " s")
 #
 ##############################################################################
 
-model = MixtureOfExpertsEncoder.from_pretrained(args.model_save_path)
-test_evaluator = MoECorrelationEvaluator.from_input_examples(test_samples, name='sts-test')
+model = MixSPEncoder.from_pretrained(args.model_save_path)
+test_evaluator = MixSPCorrelationEvaluator.from_input_examples(test_samples, name='sts-test')
 test_evaluator(model, output_path=args.model_save_path)
