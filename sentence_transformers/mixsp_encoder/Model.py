@@ -25,7 +25,7 @@ class MoE(nn.Module):
         self.gate = nn.Linear(input_dim, num_experts)
         self.experts = nn.ModuleList([MLP(input_dim, input_dim*10, output_dim) for _ in range(num_experts)])
         
-        # Define class frequencies
+        # Define class frequencies 2 classes (04, 45)
         num_class_0 = 4343
         num_class_1 = 1406
         # Calculate class weights
@@ -76,13 +76,29 @@ class Model(nn.Module):
         self.moe = MoE(expert_dim, expert_dim, num_experts, top_routing)
         self.fc = nn.Linear(expert_dim*2, 1)
         self.experts = MLP(expert_dim, expert_dim*10, expert_dim)
+        self.model_name = model_name
 
-    def forward(self, features, labels = None):
-        outputs = self.encoder(**features, return_dict=True)
-        last_layer_hidden_states = outputs.last_hidden_state
-        pooled_output = outputs.pooler_output
-        avg_pooling = torch.mean(last_layer_hidden_states, dim=1)
-        
+
+    def split_text_embed_roberta(self, features, embeddings):
+        # Get the indexes of the [SEP] tokens
+        input_ids = features['input_ids']
+        sep_indices = (input_ids == 2).nonzero()[:, 1]
+
+        # Split the token vectors for sentence A and sentence B
+        sentence_a_embeddings = []
+        sentence_b_embeddings = []
+        for i in range(0, len(sep_indices), 3):
+            sentence_a_embedding = embeddings[int(i/3), 1:sep_indices[i], :]
+            sentence_b_embedding = embeddings[int(i/3), sep_indices[i+1]:sep_indices[i+2], :]
+            sentence_a_embeddings.append(torch.mean(sentence_a_embedding, dim=0))
+            sentence_b_embeddings.append(torch.mean(sentence_b_embedding, dim=0))
+        sentence_a_embeddings = torch.stack(sentence_a_embeddings, dim=0)
+        sentence_b_embeddings = torch.stack(sentence_b_embeddings, dim=0)
+
+        return sentence_a_embeddings, sentence_b_embeddings
+    
+
+    def split_text_embed_bert(self, features, embeddings):
         # Get the indexes of the [SEP] tokens
         input_ids = features['input_ids']
         sep_indices = (input_ids == 102).nonzero()[:, 1]
@@ -92,14 +108,29 @@ class Model(nn.Module):
         sentence_b_embeddings = []
         for i in range(len(sep_indices)):
             if (i % 2) == 0:
-                sentence_a_embedding = last_layer_hidden_states[int(i/2), 1:sep_indices[i], :]
+                sentence_a_embedding = embeddings[int(i/2), 1:sep_indices[i], :]
                 sentence_a_embeddings.append(torch.mean(sentence_a_embedding, dim=0))
             else:
-                sentence_b_embedding = last_layer_hidden_states[int(i/2), sep_indices[i-1]+1:sep_indices[i], :]
+                sentence_b_embedding = embeddings[int(i/2), sep_indices[i-1]+1:sep_indices[i], :]
                 sentence_b_embeddings.append(torch.mean(sentence_b_embedding, dim=0))
-        
         sentence_a_embeddings = torch.stack(sentence_a_embeddings, dim=0)
         sentence_b_embeddings = torch.stack(sentence_b_embeddings, dim=0)
+
+        return sentence_a_embeddings, sentence_b_embeddings
+
+
+    def forward(self, features, labels = None):
+        outputs = self.encoder(**features, return_dict=True)
+        last_layer_hidden_states = outputs.last_hidden_state
+        pooled_output = outputs.pooler_output
+        avg_pooling = torch.mean(last_layer_hidden_states, dim=1)
+
+        if 'roberta' in self.model_name:
+            sentence_a_embeddings, sentence_b_embeddings = self.split_text_embed_roberta(features, last_layer_hidden_states)
+        elif 'bert' in self.model_name:
+            sentence_a_embeddings, sentence_b_embeddings = self.split_text_embed_bert(features, last_layer_hidden_states)
+        else:
+            raise NotImplementedError
 
         moe_input_sentence_a = sentence_a_embeddings + pooled_output
         moe_input_sentence_b = sentence_b_embeddings + pooled_output
