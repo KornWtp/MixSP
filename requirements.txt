@@ -10,3 +10,4 @@ nltk
 sentencepiece
 huggingface-hub
 git-lfs
+prettytable
