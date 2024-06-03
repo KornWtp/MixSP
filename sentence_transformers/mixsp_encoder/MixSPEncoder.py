@@ -2,7 +2,8 @@ from transformers import AutoTokenizer, AutoConfig, AutoModel
 import numpy as np
 import logging
 import os
-from typing import Dict, Type, Callable, List
+from typing import List, Dict, Tuple, Iterable, Type, Union, Callable, Optional
+import subprocess
 import transformers
 import torch
 from torch import nn
@@ -18,8 +19,15 @@ logger = logging.getLogger(__name__)
 
 
 class MixSPEncoder():
-    def __init__(self, model_name: str, num_experts: int = 2, top_routing: int = 1, max_length: int = None,
-                 alpha_1: float = 0.05, alpha_2: float = 0.005, device: str = None, tokenizer_args: dict = {}):
+    def __init__(self, model_name: str, 
+                num_experts: int = 2, 
+                top_routing: int = 1, 
+                max_length: int = None,
+                alpha_1: float = 0.05, 
+                alpha_2: float = 0.005, 
+                device: str = None, 
+                tokenizer_args: dict = {}):
+
         """
         Loads or create a SentenceTransformer model, that can be used to map sentences / text to embeddings.
 
@@ -29,6 +37,7 @@ class MixSPEncoder():
         :param device: Device that should be used for the model. If None, it will use CUDA if available.
         :param tokenizer_args: Arguments passed to AutoTokenizer
         """
+
         self.config = AutoConfig.from_pretrained(model_name)
 
         if num_experts is not None:
@@ -303,18 +312,41 @@ class MixSPEncoder():
 
     @classmethod
     def from_pretrained(self, model_name):
-        config = AutoConfig.from_pretrained(model_name)
-        model = Model(model_name, config.num_experts, config.top_routing, config)
-        model.encoder = AutoModel.from_pretrained(model_name, config=config)
-        model.moe.load_state_dict(torch.load(f"{model_name}/moe_model.bin"))
-        model.fc.load_state_dict(torch.load(f"{model_name}/fc_model.bin"))
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        
-        mixsp_encoder = self(model_name=model_name, 
+        try:
+            config = AutoConfig.from_pretrained(model_name)
+            model = Model(model_name, config.num_experts, config.top_routing, config)
+            model.encoder = AutoModel.from_pretrained(model_name, config=config)
+            model.moe.load_state_dict(torch.load(f"{model_name}/moe_model.bin"))
+            model.fc.load_state_dict(torch.load(f"{model_name}/fc_model.bin"))
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+            mixsp_encoder = self(model_name=model_name, 
                                 num_experts=config.num_experts, 
                                 max_length=config.max_length, 
                                 alpha_1=config.alpha_1, 
                                 alpha_2=config.alpha_2)
-        mixsp_encoder.model = model
-        mixsp_encoder.tokenizer = tokenizer
+            mixsp_encoder.model = model
+            mixsp_encoder.tokenizer = tokenizer
+        except:
+            model_path = f"models/{model_name.split('/')[-1]}"
+            if not os.path.exists(model_path):
+                os.makedirs(model_path)
+                subprocess.run(["git", "clone", f"https://huggingface.co/{model_name}"])
+                subprocess.run(["mv", model_name.split('/')[-1], "models"])
+
+            config = AutoConfig.from_pretrained(model_name)
+            model = Model(model_name, config.num_experts, config.top_routing, config)
+            model.encoder = AutoModel.from_pretrained(model_name, config=config)
+            model.moe.load_state_dict(torch.load(f"{model_path}/moe_model.bin"))
+            model.fc.load_state_dict(torch.load(f"{model_path}/fc_model.bin"))
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+            mixsp_encoder = self(model_name=model_name, 
+                                    num_experts=config.num_experts, 
+                                    max_length=config.max_length, 
+                                    alpha_1=config.alpha_1, 
+                                    alpha_2=config.alpha_2)
+            mixsp_encoder.model = model
+            mixsp_encoder.tokenizer = tokenizer
+
         return mixsp_encoder
