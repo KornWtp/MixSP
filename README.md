@@ -98,6 +98,27 @@ For the reranking evaluation code, we use [MTEB](https://github.com/embeddings-b
 If you find this repository helpful, feel free to cite our publication [MixSP: Space Decomposition for Sentence Embedding](https://arxiv.org/abs/2406.03125):
 
 ```bibtex 
+    @inproceedings{ponwitayarat-etal-2024-space,
+        title = "Space Decomposition for Sentence Embedding",
+        author = "Ponwitayarat, Wuttikorn  and
+          Limkonchotiwat, Peerat  and
+          Chuangsuwanich, Ekapol  and
+          Nutanong, Sarana",
+        editor = "Ku, Lun-Wei  and
+          Martins, Andre  and
+          Srikumar, Vivek",
+        booktitle = "Findings of the Association for Computational Linguistics ACL 2024",
+        month = aug,
+        year = "2024",
+        address = "Bangkok, Thailand and virtual meeting",
+        publisher = "Association for Computational Linguistics",
+        url = "https://aclanthology.org/2024.findings-acl.668",
+        pages = "11227--11239",
+        abstract = "Determining sentence pair similarity is crucial for various NLP tasks. A common technique to address this is typically evaluated on a continuous semantic textual similarity scale from 0 to 5. However, based on a linguistic observation in STS annotation guidelines, we found that the score in the range [4,5] indicates an upper-range sample, while the rest are lower-range samples. This necessitates a new approach to treating the upper-range and lower-range classes separately. In this paper, we introduce a novel embedding space decomposition method called MixSP utilizing a Mixture of Specialized Projectors, designed to distinguish and rank upper-range and lower-range samples accurately. The experimental results demonstrate that MixSP decreased the overlap representation between upper-range and lower-range classes significantly while outperforming competitors on STS and zero-shot benchmarks.",
+}
+```
+
+```bibtex 
     @inproceedings{Ponwitayarat-etal-2024-mixsp,
     title = "Space Decomposition for Sentence Embedding",
     author = "Ponwitayarat, Wuttikorn  and
